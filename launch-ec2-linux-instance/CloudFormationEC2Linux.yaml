@@ -1,0 +1,179 @@
+#####################################################################
+# CloudFormationEC2Linux
+#####################################################################
+AWSTemplateFormatVersion: "2010-09-09"
+
+#####################################################################
+# Description
+#####################################################################
+Description:  This template launches a Linux EC2 virtual machine
+  installing Apache, PHP and some basic software.
+  It also creates an appropriate security group for the machine.
+  You must create a Keypair before launching this stack.
+
+#####################################################################
+# Metadata
+#####################################################################
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Tagging Configuration"
+        Parameters: 
+          - ProjectName
+      - Label: 
+          default: "VPC and Subnet Configuration"
+        Parameters: 
+          - ChooseVPC
+          - ChooseSubNet
+      - Label: 
+          default: "EC2 Configuration"
+        Parameters: 
+          - LinuxAMI
+          - InstanceType
+          - KeyPair
+
+#####################################################################
+# Parameters
+#####################################################################
+Parameters:
+  ProjectName:
+    Description: Project name to use in tagging resources
+    Type: String
+    Default: EC2Linux
+
+  InstanceType:
+    Description: EC2 Instance Type to use
+    Type: String
+    AllowedValues: [ t2.small, t3.small, t3.large, t3a.small, t3a.large, m5.large, m5a.large ]
+    ConstraintDescription: t2.small, t3.small, t3.large, t3a.small, t3a.large, m5.large, m5a.large
+    Default: t3.small
+
+  LinuxAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  KeyPair:
+    Description: Name of the Keypair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  ChooseSubNet:
+    Description: Choose the Subnet within this VPC
+    Type: AWS::EC2::Subnet::Id
+
+  ChooseVPC:
+    Description: Choose the VPC this EC2 instance will be in
+    Type: AWS::EC2::VPC::Id
+
+#####################################################################
+# Resources
+#####################################################################
+Resources:
+  LinuxInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    Properties:
+      IamInstanceProfile: !Ref EC2Profile
+      ImageId: !Ref LinuxAMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPair
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref HTTPSecurityGroup
+          SubnetId:
+            !Ref ChooseSubNet
+      Tags:
+        - Key: Name
+          Value: !Sub Project ${ProjectName} Linux WebServer
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+
+          # Install Apache Web Server and PHP 
+          yum install -y httpd mysql 
+          amazon-linux-extras install -y php7.2
+
+          # Create the application home page: 
+          cat <<EOF > /var/www/html/index.php 
+          <html> 
+          <head> 
+          <title>Test Web Site</title> 
+          </head> 
+          <body> 
+          <h1>Welcome</h1> 
+          <?php echo '<p> This is my web site running on an EC2 instance </p>'; ?> 
+          </body> 
+          </html> 
+          EOF
+          
+          # Download and install the AWS SDK for PHP 
+          wget https://github.com/aws/aws-sdk-php/releases/download/3.258.2/aws.zip 
+          unzip aws -d /var/www/html 
+          
+          # Turn on web server 
+          chkconfig httpd on 
+          service httpd start 
+
+          # Signal completion to CloudFormation
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource LinuxInstance --region ${AWS::Region}
+
+  EC2Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ProjectName}-EC2LinuxProfile
+      Path: /
+      Roles:
+        - !Ref EC2LinuxPermissions
+ 
+  EC2LinuxPermissions:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-EC2LinuxRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub Project ${ProjectName} EC2LinuxPermissionsRole
+
+  HTTPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${ProjectName}-EC2LinuxSG
+      GroupDescription: Linux WebServer Security Group
+      VpcId: !Ref ChooseVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+          Description: Allow HTTP from anywhere
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: '0.0.0.0/0'
+          Description: Allow SSH from anywhere
+      Tags:
+        - Key: Name
+          Value: !Sub Project ${ProjectName} Linux WebServer Security Group
+
+#####################################################################
+# Outputs
+#####################################################################
+Outputs:
+  WebsiteAddress:
+    Description: IP address for EC2 instance
+    Value: !GetAtt LinuxInstance.PublicIp
