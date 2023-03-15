@@ -1,0 +1,157 @@
+#####################################################################
+# CloudFormationEC2Windows
+#####################################################################
+AWSTemplateFormatVersion: "2010-09-09"
+
+#####################################################################
+# Description
+#####################################################################
+Description:  This template launches a Windows EC2 virtual machine
+  installing Microsoft IIS WebServer software
+  It also creates an appropriate security group for the machine.
+  You must create a Keypair before launching this stack.
+
+#####################################################################
+# Metadata
+#####################################################################
+Metadata: 
+  AWS::CloudFormation::Interface: 
+    ParameterGroups: 
+      - Label: 
+          default: "Tagging Configuration"
+        Parameters: 
+          - ProjectName
+      - Label: 
+          default: "VPC and Subnet Configuration"
+        Parameters: 
+          - ChooseVPC
+          - ChooseSubNet
+      - Label: 
+          default: "EC2 Configuration"
+        Parameters: 
+          - WindowsAMI
+          - InstanceType
+          - KeyPair
+
+#####################################################################
+# Parameters
+#####################################################################
+Parameters:
+  ProjectName:
+    Description: Project name to use in tagging resources
+    Type: String
+    Default: EC2Windows
+
+  InstanceType:
+    Description: EC2 Instance Type to use
+    Type: String
+    AllowedValues: [ t2.small, t3.small, t3.large, t3a.small, t3a.large, m5.large, m5a.large ]
+    ConstraintDescription: t2.small, t3.small, t3.large, t3a.small, t3a.large, m5.large, m5a.large
+    Default: t3.small
+
+  WindowsAMI:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
+
+  KeyPair:
+    Description: Name of the Keypair to enable RDP access
+    Type: AWS::EC2::KeyPair::KeyName
+
+  ChooseSubNet:
+    Description: Choose the Subnet within this VPC
+    Type: AWS::EC2::Subnet::Id
+
+  ChooseVPC:
+    Description: Choose the VPC this EC2 instance will be in
+    Type: AWS::EC2::VPC::Id
+
+#####################################################################
+# Resources
+#####################################################################
+Resources:
+  WindowsInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+    Properties:
+      IamInstanceProfile: !Ref EC2Profile
+      ImageId: !Ref WindowsAMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPair
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref HTTPSecurityGroup
+          SubnetId:
+            !Ref ChooseSubNet
+      Tags:
+        - Key: Name
+          Value: !Sub Project ${ProjectName} Windows WebServer
+      UserData:
+        Fn::Base64: !Sub |
+          <powershell>
+          Install-WindowsFeature Web-Server -IncludeManagementTools -IncludeAllSubFeature
+          # Needed to fix issue with Windows Server using RDP
+          #Set-SConfig -AutoLaunch $false
+          # Signal completion to CloudFormation
+          cfn-signal.exe --success true --stack ${AWS::StackName} --resource WindowsInstance --region ${AWS::Region}
+          </powershell> 
+
+  EC2Profile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ProjectName}-EC2WindowsProfile
+      Path: /
+      Roles:
+        - !Ref EC2WindowsPermissions
+ 
+  EC2WindowsPermissions:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-EC2WindowsRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub Project ${ProjectName} EC2WindowsPermissionsRole
+
+  HTTPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${ProjectName}-EC2WindowsSG
+      GroupDescription: Windows WebServer Security Group
+      VpcId: !Ref ChooseVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: '0.0.0.0/0'
+          Description: Allow HTTP from anywhere
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: '0.0.0.0/0'
+          Description: Allow RDP from anywhere
+      Tags:
+        - Key: Name
+          Value: !Sub Project ${ProjectName} Windows WebServer Security Group
+
+#####################################################################
+# Outputs
+#####################################################################
+Outputs:
+  WebsiteAddress:
+    Description: IP address for EC2 instance
+    Value: !GetAtt WindowsInstance.PublicIp
