@@ -16,4 +16,5 @@ Don't forget to delete the resources created by the manual tasks, and terminate 
 | create-multi-az-vpc | Creates a VPC across 3 AZ with Public, Private and Restricted Subnets |
 | launch-ec2-linux-instance | Launches an Amazon EC2 instance running Linux with supporting Security Group and Keypair |
 | launch-ec2-windows-instance | Launches an Amazon EC2 instance running Windows with supporting Security Group and Keypair |
-| serverless-website | Builds a Serverless Web site with S3 and CloudFront |
+| serverless-website | Builds a Serverless Web site with S3 and CloudFront (work in progress) |
+| custom-ami-autoscaling | Builds a Custom AMI and AutoScaling Group with Loadbalancer (work in progress) |
