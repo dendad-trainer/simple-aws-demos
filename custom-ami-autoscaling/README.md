@@ -11,15 +11,29 @@ The CloudFormation Template creates the following AWS Resources:
 
 ## Pre-requisites ##
 - A browser to connect to your AWS Account (recommended browsers are Chrome or Firefox)
+- You can use the AWS CLI to launch the cloudformation template
 
 
 ## Setup Instructions ##
-Copy the YML file into an S3 bucket. 
+There are two ways of setting up the environment.
 
-Log in to the AWS Console, and choose CloudFormation. Make sure you are in the same Region as before.
+### Using the AWS Console ###
+Log in to the AWS Console, and choose CloudFormation. Make sure you are in the AWS Region you want to create the demo in.
 
-Create Resources from New, referencing the YML file.
+Create Resources from New, and select the CloudFormationAutoScaling.yaml file.
 
+Check the 'Events' tab for progress. 
+Check the 'Outputs' tab for the IP address of the Website and DNS Name of the Load Balancer.
+
+### Using the AWS CLI (Linux or Mac) ###
+Download the CloudFormationAutoScaling.yaml file and the builddemo.bash and deletedemo.bash files to your local directory.
+At the command mode:
+- chmod +x *.bash
+
+Execute the builddemo.bash file:
+- ./builddemo.bash
+
+This is will build the CloudFormation stack, and wait until completion.
 
 ## Demo Instructions ##
 Look up the 'Outputs' Section of the CloudFormation Stack.
