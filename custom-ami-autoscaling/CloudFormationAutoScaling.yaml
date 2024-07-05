@@ -1,0 +1,534 @@
+AWSTemplateFormatVersion: 2010-09-09
+#####################################################################
+# CloudFormation Template to: 
+# Create a custom AMI and AutoScaling Group with Load Balancer
+# Demonstrate how to build a Custom CloudFormation resource
+#     and extract attributes.
+#####################################################################
+
+Description: Create an AMI and AutoScaling Group with Load Balancer
+
+####################################################################
+# Parameters
+# EC2 instances built using AWS Graviton architecture.
+####################################################################
+Parameters:
+  AMZN2023LinuxAMIId:
+    Type : AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+
+####################################################################
+# Resources
+####################################################################
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: Demo VPC
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Demo VPC Internet Gateway
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Demo Public Subnet 1
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Demo Public Subnet 2
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Demo Private Subnet 1
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: Demo Private Subnet 2
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Demo Public Route Table
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Demo Private Route Table
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  WebInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref AMZN2023LinuxAMIId
+      InstanceType: t4g.micro
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: 'true'
+          SubnetId: !Ref PublicSubnet1
+          GroupSet:
+            - !Ref WebSecurityGroup
+      SourceDestCheck: 'false'
+      Tags:
+        - Key: Name
+          Value: Demo Web Server 1
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          # Use latest Amazon Linux 2023
+          dnf update -y
+          dnf install -y httpd php-fpm php php-devel
+          /usr/bin/systemctl enable httpd
+          /usr/bin/systemctl start httpd
+          cd /var/www/html
+          cat <<EOF > index.php
+          <?php
+          ?>
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Amazon AWS Demo Website</title>
+            </head>
+            <body>
+            <h2>Amazon AWS Demo Website</h2>
+            <table border=1>
+            <tr><th>Meta-Data</th><th>Value</th></tr>
+          <?php
+            # Get the instance ID
+            echo "<tr><td>InstanceId</td><td><i>";
+            echo shell_exec('ec2-metadata --instance-id');
+            "</i></td><tr>";
+            # Instance Type
+            echo "<tr><td>Instance Type</td><td><i>";
+            echo shell_exec('ec2-metadata --instance-type');
+            "</i></td><tr>";
+            # AMI ID
+            echo "<tr><td>AMI</td><td><i>";
+            echo shell_exec('ec2-metadata --ami-id');
+            "</i></td><tr>";
+            # User Data
+            echo "<tr><td>User Data</td><td><i>";
+            echo shell_exec('ec2-metadata --user-data');
+            "</i></td><tr>";
+            # Availability Zone
+            echo "<tr><td>Availability Zone</td><td><i>";
+            echo shell_exec('ec2-metadata --availability-zone');
+            "</i></td><tr>";
+          ?>
+            </table>
+            </body>
+          </html>
+          EOF
+          # Sleep to ensure that the file system is synced before the snapshot is taken
+          sleep 120
+          # Signal to say its OK to create an AMI from this Instance.
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --region ${AWS::Region} --resource AMICreate
+
+  # Allow Port 22 to enable EC2 Connect (only for EC2 in Public Subnet)
+  WebSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable HTTP access
+      GroupName: Demo Web Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Demo Web Security Group
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      AllocationId: !GetAtt
+        - NATGatewayEIP
+        - AllocationId
+      Tags:
+        - Key: Name
+          Value: Demo NAT Gateway
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  NATGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: Demo EIP for NAT Gateway
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+
+  NATGatewayRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGateway
+
+  # Completes when the instance is fully provisioned and ready for AMI creation.
+  AMICreate:
+    Type: AWS::CloudFormation::WaitCondition
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+
+  # Custom Resource to create the AMI
+  AMIBuilder:
+    Type: Custom::AMI
+    DependsOn: AMICreate
+    Properties:
+      ServiceToken: !GetAtt AMIFunction.Arn
+      InstanceId: !Ref WebInstance
+
+  AMIFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      FunctionName: DemoAMIBuilderFunction
+      Description: Function to create an AMI from existing EC2 instance
+      Tags:
+        - Key: Name
+          Value: Demo AMIBuilderFunction
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+      Code:
+        ZipFile: !Sub |
+          import boto3
+          import cfnresponse
+          def handler(event, context):
+            # Init ...
+            rtype = event['RequestType']
+            print("The event is: ", str(rtype) )
+
+            responseData = {}
+            ec2api = boto3.client('ec2')
+            image_available_waiter = ec2api.get_waiter('image_available')
+
+            # Retrieve parameters
+            instanceId = event['ResourceProperties']['InstanceId']
+
+            # Main processing block
+            try:
+              if rtype in ('Delete', 'Update'):
+                # deregister the AMI and delete the snapshot
+                print ("Getting AMI ID")
+                res = ec2api.describe_images( Filters=[{'Name': 'name', 'Values': ['DemoWebServerAMI']}])
+
+                print ("De-registering AMI")
+                ec2api.deregister_image( ImageId=res['Images'][0]['ImageId'] )
+
+                print ("Getting snapshot ID")
+                res = ec2api.describe_snapshots( Filters=[{'Name': 'tag:Name', 'Values': ['DemoWebServerSnapshot']}])
+
+                print ("Deleting snapshot")
+                ec2api.delete_snapshot( SnapshotId= res['Snapshots'][0]['SnapshotId'] )
+                responseData['SnapshotId']=res['Snapshots'][0]['SnapshotId']
+
+              if rtype in ('Create', 'Update'):
+                # create the AMI
+                print ("Creating AMI and waiting")
+                res = ec2api.create_image( 
+                  Description='Demo AMI created for autoscaling group',
+                  InstanceId=instanceId,
+                  Name='DemoWebServerAMI',
+                  NoReboot=True,
+                  TagSpecifications=[ {'ResourceType': 'image',
+                    'Tags': [ {'Key': 'Name', 'Value': 'DemoWebServerAMI'} ]},
+                     {'ResourceType': 'snapshot',
+                     'Tags': [ {'Key': 'Name', 'Value': 'DemoWebServerSnapshot'} ]}]
+                )
+                image_available_waiter.wait ( ImageIds=[res['ImageId']] )
+                responseData['ImageId']=res['ImageId']
+
+              # Everything OK... send the signal back
+              print("Operation successful!")
+              cfnresponse.send(event,
+                              context,
+                              cfnresponse.SUCCESS,
+                              responseData)
+            except Exception as e:
+                print("Operation failed...")
+                print(str(e))
+                responseData['Data'] = str(e)
+                cfnresponse.send(event,
+                                context,
+                                cfnresponse.FAILED,
+                                responseData)
+            #return True
+      Runtime: python3.9
+      Timeout: 300
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "Demo-LambdaExecutionRoleForAMIBuilder"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal: {Service: [lambda.amazonaws.com]}
+          Action: ['sts:AssumeRole']
+      Path: /
+      Tags:
+        - Key: Name
+          Value: Demo LambdaExecutionRoleForAMIBuilder
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaRole
+      Policies:
+      - PolicyName: EC2Policy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+              - 'ec2:DescribeInstances'
+              - 'ec2:DescribeImages'
+              - 'ec2:CreateImage'
+              - 'ec2:DeregisterImage'
+              - 'ec2:CreateSnapshots'
+              - 'ec2:DescribeSnapshots'
+              - 'ec2:DeleteSnapshot'
+              - 'ec2:CreateTags'
+              - 'ec2:DeleteTags'
+              Resource: ['*']
+
+  # Target Group
+  DemoTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      IpAddressType: 'ipv4'
+      Name: DemoTargetGroup
+      Port: 80
+      Protocol: 'HTTP'
+      Tags: 
+        - Key: Name
+          Value: Demo Target Group
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+      TargetType: 'instance'
+      VpcId: !Ref VPC
+
+  # Load Balancer
+  DemoLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: 'ipv4'
+      Name: 'DemoELB'
+      Scheme: 'internet-facing'
+      SecurityGroups: 
+        - !Ref WebSecurityGroup
+      Subnets: 
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags: 
+        - Key: Name
+          Value: Demo Load Balancer
+        - Key: Demo
+          Value: Create an AMI and AutoScaling Group with Load Balancer
+      Type: 'application'
+
+  # Listener
+  DemoLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions: 
+        - TargetGroupArn: !GetAtt DemoTargetGroup.TargetGroupArn
+          Type: 'forward'
+      LoadBalancerArn: !GetAtt DemoLoadBalancer.LoadBalancerArn
+      Port: 80
+      Protocol: 'HTTP'
+
+  # Launch Template
+  DemoAutoScalingLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData: 
+        ImageId: !GetAtt AMIBuilder.ImageId
+        InstanceType: 't4g.micro'
+        Monitoring: 
+          Enabled: 'true'
+        SecurityGroupIds: 
+          - !Ref WebSecurityGroup
+        TagSpecifications: 
+          - ResourceType: 'instance'
+            Tags:
+            - Key: 'Name'
+              Value: 'Demo AutoScaling Webserver Instance'
+            - Key: 'Demo'
+              Value: 'Create an AMI and AutoScaling Group with Load Balancer'
+      LaunchTemplateName: 'DemoLaunchTemplate'
+      TagSpecifications: 
+        - ResourceType: 'launch-template'
+          Tags:
+          - Key: 'Name'
+            Value: 'Demo AutoScaling Webserver Launch Template'
+          - Key: 'Demo'
+            Value: 'Create an AMI and AutoScaling Group with Load Balancer'
+
+  # AutoScaling Group
+  DemoAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: 'Demo Auto Scaling Group'
+      DesiredCapacity: 4
+      LaunchTemplate: 
+        LaunchTemplateId: !GetAtt DemoAutoScalingLaunchTemplate.LaunchTemplateId
+        Version: !GetAtt DemoAutoScalingLaunchTemplate.LatestVersionNumber
+      MaxSize: 8
+      MetricsCollection: 
+        - Granularity: '1Minute'
+      MinSize: 2
+      Tags: 
+          - Key: Name
+            Value: Demo Auto Scaling Group
+            PropagateAtLaunch: 'false'
+          - Key: Demo
+            Value: Create an AMI and AutoScaling Group with Load Balancer
+            PropagateAtLaunch: 'false'
+      TargetGroupARNs: 
+        - !GetAtt DemoTargetGroup.TargetGroupArn
+      VPCZoneIdentifier: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  # AutoScaling Policy
+  DemoAutoScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref DemoAutoScalingGroup
+      PolicyType: 'TargetTrackingScaling'
+      TargetTrackingConfiguration: 
+          PredefinedMetricSpecification: 
+            PredefinedMetricType: 'ASGAverageCPUUtilization'
+          TargetValue: 60
+
+####################################################################
+# Outputs
+####################################################################
+Outputs:
+  WebServer:
+    Value: !GetAtt WebInstance.PublicIp
+    Description: Public IP address of Web Server
+
+  AMIBuilderRoutine:
+    Description: Image created by the AMI Builder routine
+    Value: !GetAtt 'AMIBuilder.ImageId'
+
+  DNSName:
+    Description: The DNS Name of the Elastic Load Balancer
+    Value: !GetAtt DemoLoadBalancer.DNSName
