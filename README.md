@@ -13,6 +13,7 @@ Don't forget to delete the resources created by the manual tasks, and terminate 
 
 | Folder | Purpose |
 | ------ | ------- |
+| accessibility-pipeline | Create a CodePipeline using Lambda to parse HTML files for accessibility testing |
 | create-multi-az-vpc | Creates a VPC across 3 AZ with Public, Private and Restricted Subnets |
 | custom-ami-autoscaling | Builds a Custom AMI and AutoScaling Group with Loadbalancer |
 | launch-ec2-linux-instance | Launches an Amazon EC2 instance running Linux with supporting Security Group and Keypair |
