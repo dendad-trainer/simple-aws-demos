@@ -7,11 +7,15 @@ The CloudFormation Template creates the following AWS Resources:
 - CodePipeline and associated S3 bucket
 - Lambda function to parse HTML files for accessibility testing
 
-This CodePipeline demonstrates the use of a Lambda function as one step in the pipeline.
+This CodePipeline demo is used to illustrate the use of a Lambda function as one step in a pipeline. When using Lambda in a CodePipeline, it is necessary to post a message to the calling pipeline.
+
 The source of the pipeline is an S3 bucket, which receives a ZIP file containg HTML source code.
-The Lmabda function is the main step in the pipeline. It unzips the file, extracts the HTML and parses each file for accessibility. 
+
+The Lambda function is the main step in the pipeline. It unzips the file, extracts the HTML and parses each file for accessibility. 
 By 'accessibility' in this case, we are looking for all the '<img' tags in the file. If there are no images, the file is marked as conforming to accessibility testing. If an image tag is found, the function looks for 'alt=' text. If this does not exist, the file is deemed to fail accessibility testing and the pipeline is halted.
+
 If the pipeline step succeeds, the Lambda function posts a message directly to the CodePipeline, which proceeds to the next step.
+
 The final stage of the pipeline is to deploy the ZIP file to the target S3 bucket.
 
 ## Pre-requisites ##
