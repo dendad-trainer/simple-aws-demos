@@ -62,7 +62,7 @@ In either case, you also need to do the following:
 ## Summary of Files ##
 | File | Purpose |
 | ------ | ------- |
-| CloudFormationAccessibilityCodePipeline | Cloud Formation Template to build the Stack of the complete Demo environment |
+| CloudFormationAccessibilityCodePipeline.yaml | Cloud Formation Template to build the Stack of the complete Demo environment |
 | html_checker.py | For Reference: Lambda Function to parse HTML files for accessibility (included in CloudFormation Template) |
 | README.md | This file |
 | builddemo.bash | Linux / Mac bash file to create the CloudFormation Stack for the Demo |
