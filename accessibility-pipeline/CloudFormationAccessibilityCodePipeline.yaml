@@ -1,0 +1,369 @@
+AWSTemplateFormatVersion: 2010-09-09
+#####################################################################
+# CloudFormation Template to: 
+# Create the bucket for storing the original ZIP file 
+# and target bucket for distribution 
+# and Lambda function to analyse the HTML code
+# before creating the code pipeline
+#####################################################################
+
+Description: Create source and target buckets and code pipeline to validate source HTML
+
+####################################################################
+# Parameters
+####################################################################
+Parameters:
+  codepipelinebucketname:
+    Type: "String"
+    Description: Name of S3 bucket to hold the code pipeline
+    Default: "codepipeline-accessibility-demo1"
+
+  testingbucketname:
+    Type: "String"
+    Description: Name of S3 bucket to hold the source code to start the pipeline
+    Default: "testing-bucket-demo1"
+
+  homebucketname:
+    Type: "String"
+    Description: Name of S3 bucket to hold the deployed code
+    Default: "home-bucket-demo1"
+
+####################################################################
+# Resources
+####################################################################
+Resources:
+
+# Bucket to hold code pipeline
+  S3BucketCodePipeline:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: "Delete"
+    Properties:
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+      BucketName: !Ref codepipelinebucketname
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: "BucketOwnerEnforced"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: false
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: "AES256"
+
+# Bucket for testing
+  S3BucketTesting:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: "Delete"
+    Properties:
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+      BucketName: !Ref testingbucketname
+      VersioningConfiguration:
+        Status: "Enabled"
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: "BucketOwnerEnforced"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: false
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: "AES256"
+
+# S3 bucket for final distributed code 
+  S3BucketHome:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::S3::Bucket"
+    DeletionPolicy: "Delete"
+    Properties:
+      PublicAccessBlockConfiguration:
+        RestrictPublicBuckets: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        BlockPublicAcls: true
+      BucketName: !Ref homebucketname
+      OwnershipControls:
+        Rules:
+        - ObjectOwnership: "BucketOwnerEnforced"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: true
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: "AES256"
+
+# Role for Lambda Function to access CodePipeline
+  CodePipelineLambdaExecRole:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/"
+      ManagedPolicyArns:
+      - "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+      - Ref: "CodePipelineLambdaExecPolicy"
+      MaxSessionDuration: 3600
+      RoleName: "CodePipelineLambdaExecRole"
+      Description: "Role to enable Lambda functions to read S3 buckets and put codepipeline job status"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "lambda.amazonaws.com"
+
+# Policy for Lambda Function to access CodePipeline
+  CodePipelineLambdaExecPolicy:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::IAM::ManagedPolicy"
+    DeletionPolicy: "Delete"
+    Properties:
+      ManagedPolicyName: "CodePipelineLambdaExecPolicy"
+      Path: "/"
+      Description: "Enables Lambda function to put success or failure to codepipeline job"
+      Groups: []
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Resource: "arn:aws:logs:*:*:*"
+          Action:
+          - "logs:*"
+          Effect: "Allow"
+        - Resource: "*"
+          Action:
+          - "codepipeline:PutJobSuccessResult"
+          - "codepipeline:PutJobFailureResult"
+          Effect: "Allow"
+
+# Lambda Function to check the HTML for accessibilty
+  LambdaFunctionhtmlchecker:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::Lambda::Function"
+    DependsOn: CodePipelineLambdaExecPolicy
+    DeletionPolicy: "Delete"
+    Properties:
+      MemorySize: 128
+      Description: "Checks all HTML files in a zip archive for accessibility testing. Called from CodePipeline"
+      TracingConfig:
+        Mode: "PassThrough"
+      Timeout: 5
+      RuntimeManagementConfig:
+        UpdateRuntimeOn: "Auto"
+      Handler: "lambda_function.lambda_handler"
+      Code:
+        ZipFile: !Sub |
+          # HTML CHECKER
+          # Python Code to check HTML files for <> tags and basic accessibility checking.
+          # For demo purposes.
+          # This only checks for <IMG tags, and whether they have ALT= descriptors.
+          # Note that only one failure breaks the process and returns "False"
+          #
+          from __future__ import print_function
+          import boto3
+          import os
+          import fnmatch
+          import sys 
+          import zipfile
+          # Entry point for code when hosted in AWS Lambda
+          def lambda_handler(event, context):
+            # unpack event parameters from CodePipeline
+            jobId = event['CodePipeline.job']['id']
+            s3location = event['CodePipeline.job']['data']['inputArtifacts'][0]['location']['s3Location']['bucketName']
+            s3object = event['CodePipeline.job']['data']['inputArtifacts'][0]['location']['s3Location']['objectKey']
+            print("S3 Bucket: " + str(s3location) + ", Object: " + str(s3object))
+            # copy and unpack the source files and run assessment
+            targetfolder = copy_zip_to_tmp(s3location,s3object)
+            allcodeok = check_all_html_files(targetfolder)
+            finalmsg = "Final Code Assessment: Accessible code: " + str(allcodeok)
+            print(finalmsg)
+            # Notify CodePipeline job
+            code_pipeline = boto3.client('codepipeline')
+            if (allcodeok == True):
+              print('Putting job success')
+              code_pipeline.put_job_success_result(jobId=jobId)
+            else:
+              print('Putting job failure')
+              code_pipeline.put_job_failure_result(jobId=jobId, failureDetails={'message': finalmsg, 'type': 'JobFailed'})
+            # end of handler
+            print('End of handler')
+            return finalmsg
+          # Copies the ZIP file to the /tmp directory and unpacks it
+          # Parameters:
+          #	name of bucket containing the ZIP file
+          #	name of the zip file itself
+          # Returns
+          #	location of the /tmp directory where the files are
+          def copy_zip_to_tmp(s3bucket, s3object):
+            tmpfolder = '/tmp'
+            writefilename = tmpfolder + "/sourcecode.zip"
+            print (f"Copying s3://{s3bucket}/{s3object} to {writefilename}")
+            # Copy zip file to temporary folder
+            s3 = boto3.client('s3')
+            try:
+              with open(writefilename,'wb') as writef:
+                s3.download_fileobj(s3bucket,s3object,writef)
+            except Exception as e:
+              print("ERROR: S3 operation failed")
+              print(str(e))
+            # Unpack the zip file
+            try:
+              with zipfile.ZipFile(writefilename,'r') as zip_ref:
+                zip_ref.extractall(path=tmpfolder)
+              print(f"Extracted {writefilename} to {tmpfolder}")
+            except zipfile.BadZipFile:
+              print(f"ERROR: {writefilename} is not a valid zip file")
+            return tmpfolder
+          # Reads the directory to find all HTML files and processes them
+          # Parameters:
+          #	File directory to walk through
+          # Returns:
+          #	True if all files pass accessibility test
+          #	False if any file buffer returns a False accessibilty
+          def check_all_html_files(osdir):
+            allfilesok = True
+            filesfound = []
+            # Build an array of HTML file names in this directory
+            print ("Reading Directory: ",osdir)
+            for htmlfound in os.listdir(osdir):
+              if fnmatch.fnmatch(htmlfound,"*.html"):
+                filesfound.append(htmlfound)
+            # Iterate through the files and check each in turn
+            if (len(filesfound) == 0):
+              print("No files found to process")
+            for ff in filesfound:
+              filebuff = open_this_file(osdir+"/"+ff)
+              res = check_html_for_img(filebuff)
+              if (res == False):
+                allfilesok = False
+                break
+            return allfilesok
+          # Opens the file and returns a file buffer
+          # Parameters:
+          #	nextfile = name of file to open
+          # Returns:
+          # 	filebuff = file buffer 
+          def open_this_file(nextfile):
+            print ("Opening file: ",nextfile)
+            f = open(nextfile, "r")
+            filebuff = f.read()
+            f.close()
+            return filebuff
+          # Parses the buffer of HTML text, looking for IMG and ALT tags
+          # Parameters:
+          #	fbuffer = buffer of HTML code from a file read
+          # Returns: 
+          # 	True if there are no "<img" tags at all
+          # 	True if every "<img" tag has an "alt=" attribute
+          # 	False if there are "<img" tags without an "alt=" attribute
+          def check_html_for_img(fbuffer):
+            imgvalid = True
+            startpos = 0
+            # find the first IMG tag
+            tagpos1 = fbuffer.find("<img",startpos)
+            while (tagpos1 != -1):
+              # find the corresponding end tag
+              endtagpos = fbuffer.find(">",tagpos1)
+              print("Evaluating: ",fbuffer[tagpos1:endtagpos+1])
+              # is there an ALT between them
+              findalt = fbuffer.find(" alt=",tagpos1,endtagpos)
+              if (findalt == -1):
+                imgvalid = False
+                print("Evaluation: - cannot find an alt string")
+                break
+              else:
+                print ("Evaluation - found an alt string")
+              # find the next IMG tag from the end of the last one
+              tagpos1 = fbuffer.find("<img",endtagpos)
+            print ("Buffer Assessment: Accessible code: ", imgvalid)
+            return imgvalid
+          # Driver code for inline testing
+          if __name__ == '__main__':
+            # argv[1] = name of the S3 bucket where the archive exists
+            # argv[2] = name of the ZIP file in the bucket
+            if ((len(sys.argv)) == 3):
+              # unpack event parameters from CodePipeline
+              s3location = sys.argv[1]
+              s3object = sys.argv[2]
+              print("S3 Bucket: " + str(s3location) + ", Object: " + str(s3object))              
+              # copy and unpack the source files and run assessment
+              targetfolder = copy_zip_to_tmp(s3location,s3object)
+              allcodeok = check_all_html_files(targetfolder)
+              finalmsg = "Final Code Assessment: Accessible code: " + str(allcodeok)
+              print(finalmsg)
+            else:
+              print ("ERROR: Invalid number of arguments")
+      Role:
+        !GetAtt CodePipelineLambdaExecRole.Arn
+      FileSystemConfigs: []
+      FunctionName: "html_checker"
+      Runtime: "python3.11"
+      PackageType: "Zip"
+      LoggingConfig:
+        LogFormat: "Text"
+        LogGroup: "/aws/lambda/html_checker"
+      EphemeralStorage:
+        Size: 512
+      Architectures:
+      - "x86_64"
+
+# Bucket policy for the Code Pipeline bucket
+  S3BucketPolicyCodePipeline:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::S3::BucketPolicy"
+    DeletionPolicy: "Delete"
+    Properties:
+      Bucket:
+        Ref: "S3BucketCodePipeline"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Id: "SSEAndSSLPolicy"
+        Statement:
+        - Condition:
+            StringNotEquals:
+              s3:x-amz-server-side-encryption: "aws:kms"
+          Resource: !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref S3BucketCodePipeline
+              - '/*'
+          Action: "s3:PutObject"
+          Effect: "Deny"
+          Principal: "*"
+          Sid: "DenyUnEncryptedObjectUploads"
+        - Condition:
+            Bool:
+              aws:SecureTransport: "false"
+          Resource: !Join
+            - ''
+            - - 'arn:aws:s3:::'
+              - !Ref S3BucketCodePipeline
+              - '/*'
+          Action: "s3:*"
+          Effect: "Deny"
+          Principal: "*"
+          Sid: "DenyInsecureConnections"
+  
+# CodePipeline to read and validate HTML before deploying
+
+####################################################################
+# Outputs
+####################################################################
+Outputs:
+  BucketCodePipeline:
+    Value: !Ref S3BucketCodePipeline
+    Description: Name of Bucket where code pipeline is managed
+
+  BucketTesting:
+    Value: !Ref S3BucketTesting
+    Description: Name of Bucket to store original ZIP file for testing
+
+  BucketHome:
+    Value: !Ref S3BucketHome
+    Description: Name of Bucket to store final distributed code
