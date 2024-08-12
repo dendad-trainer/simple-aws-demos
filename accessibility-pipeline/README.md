@@ -1,4 +1,4 @@
-# Create a CodePipeline using Lambda to parse HTML files for accessibility testing
+# Demo CodePipeline using Lambda to parse HTML files for accessibility testing
 
 ## Introduction ##
 The CloudFormation Template creates the following AWS Resources:
