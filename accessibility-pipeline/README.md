@@ -59,6 +59,9 @@ If all of the files pass the test, the CodePipeline will proceeed to the DEPLOY 
 
 Experiment with different combinations of files.
 
+### Other features to demonstrate ####
+Look at the source code of the Lambda function (html_checker) and note the payload contents that are unpacked when the function is called, and the posting to the CodePipeline JOB on completion.
+
 ## Tidy Up ##
 The following steps need to be performed to tidy up the infastructure at the end of the demo.
 
