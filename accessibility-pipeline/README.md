@@ -45,7 +45,19 @@ Execute the builddemo.bash file:
 This is will build the CloudFormation stack, and wait until completion.
 
 ## Demo Instructions ##
-(in progress)
+Once the pipeline has been created in cloudFormation, it will attempt to run. The SOURCE Phase will fail because there is no ZIP file to process. You can ignore this behaviour.
+
+You then need to create a ZIP file with some web pages. There are examples attached (see table below). The web pages should be zipped into the ROOT directory of the ZIP file. 
+
+The ZIP file, by default, should be called 'SampleApp_Linux.zip'. (This can be changed when you launch the CloudFormation template). 
+
+Upload this ZIP file to the testing bucket (default name = testing-bucket-demo1). This will start the pipeline, which will execute the Lambda function during the INVOKE Phase. The Lambda function will unzip the file, and open each of the html files in turn. If an html file has an 'img' tag, then the file will be marked as 'Failed" unless there is also a 'alt=' tag. 
+
+If any of the files fail the test, the CodePipeline will be stopped. 
+
+If all of the files pass the test, the CodePipeline will proceeed to the DEPLOY Phase, which will deploy all the html files onto the target S3 bucket (default name = home-bucket-demo1). 
+
+Experiment with different combinations of files.
 
 ## Tidy Up ##
 The following steps need to be performed to tidy up the infastructure at the end of the demo.
@@ -67,6 +79,9 @@ In either case, you also need to do the following:
 | README.md | This file |
 | builddemo.bash | Linux / Mac bash file to create the CloudFormation Stack for the Demo |
 | deletedemo.bash | Linux / Mac bash file to delete the CloudFormation Stack after the Demo |
-
+| webpage-img-alt.html | Example webpage with img tag and alt descriptor |
+| webpage-img-both.html | Example webpage with img tag and alt descriptor and img tag without |
+| webpage-img-noalt.html | Example webpage with img tag but without alt descriptor |
+| webpage-noimg.html | Example webpage without any img tags | 
 
 
